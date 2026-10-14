@@ -1,0 +1,603 @@
+{
+  "resourceType": "Bundle",
+  "id": "synthetic-ehr-validation-2024-10-01",
+  "type": "collection",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:11111111-1111-4111-8111-111111111111",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-1",
+        "identifier": [
+          {
+            "system": "https://hospital.example.org/mrn",
+            "value": "123456789"
+          },
+          {
+            "system": "https://hospital.example.org/patient-id",
+            "value": "987654321"
+          }
+        ],
+        "name": [
+          {
+            "family": "Lee",
+            "given": [
+              "Taylor",
+              "Morgan"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1980-03-15"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:22222222-2222-4222-8222-222222222222",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "encounter-1",
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "text": "Office Visit"
+          }
+        ],
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "period": {
+          "start": "2024-10-01T08:00:00-04:00",
+          "end": "2024-10-01T09:00:00-04:00"
+        },
+        "participant": [
+          {
+            "individual": {
+              "display": "Sarah Chen, MD"
+            }
+          }
+        ],
+        "serviceProvider": {
+          "display": "Riverside Medical Center"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000003-3333-4333-8333-000000000003",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-hemoglobin",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "718-7",
+              "display": "Hemoglobin"
+            }
+          ],
+          "text": "Hemoglobin"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 13.5,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000004-3333-4333-8333-000000000004",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-hematocrit",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "4544-3",
+              "display": "Hematocrit"
+            }
+          ],
+          "text": "Hematocrit"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 41.2,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000005-3333-4333-8333-000000000005",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-wbc",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "6690-2",
+              "display": "WBC Count"
+            }
+          ],
+          "text": "WBC Count"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 7.8,
+          "unit": "10^3/uL",
+          "system": "http://unitsofmeasure.org",
+          "code": "10*3/uL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000006-3333-4333-8333-000000000006",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-platelets",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "777-3",
+              "display": "Platelet Count"
+            }
+          ],
+          "text": "Platelet Count"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 250,
+          "unit": "10^3/uL",
+          "system": "http://unitsofmeasure.org",
+          "code": "10*3/uL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000007-3333-4333-8333-000000000007",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-sodium",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2951-2",
+              "display": "Sodium"
+            }
+          ],
+          "text": "Sodium"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 140,
+          "unit": "mmol/L",
+          "system": "http://unitsofmeasure.org",
+          "code": "mmol/L"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000008-3333-4333-8333-000000000008",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-potassium",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2823-3",
+              "display": "Potassium"
+            }
+          ],
+          "text": "Potassium"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 4.8,
+          "unit": "mmol/L",
+          "system": "http://unitsofmeasure.org",
+          "code": "mmol/L"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000009-3333-4333-8333-000000000009",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-chloride",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2075-0",
+              "display": "Chloride"
+            }
+          ],
+          "text": "Chloride"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 102,
+          "unit": "mmol/L",
+          "system": "http://unitsofmeasure.org",
+          "code": "mmol/L"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000010-3333-4333-8333-000000000010",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bicarbonate",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2028-9",
+              "display": "CO2 (Bicarbonate)"
+            }
+          ],
+          "text": "CO2 (Bicarbonate)"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 24,
+          "unit": "mmol/L",
+          "system": "http://unitsofmeasure.org",
+          "code": "mmol/L"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000011-3333-4333-8333-000000000011",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-bun",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "3094-0",
+              "display": "BUN"
+            }
+          ],
+          "text": "BUN"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 14,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000012-3333-4333-8333-000000000012",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-creatinine",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2160-0",
+              "display": "Creatinine"
+            }
+          ],
+          "text": "Creatinine"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 0.9,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000013-3333-4333-8333-000000000013",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-egfr",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "98979-8",
+              "display": "eGFR (CKD-EPI)"
+            }
+          ],
+          "text": "eGFR (CKD-EPI)"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 95,
+          "unit": "mL/min/1.73m²",
+          "system": "http://unitsofmeasure.org",
+          "code": "mL/min/{1.73_m2}"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000014-3333-4333-8333-000000000014",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-glucose",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "1558-6",
+              "display": "Glucose (Fasting)"
+            }
+          ],
+          "text": "Glucose (Fasting)"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 88,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        }
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:00000015-3333-4333-8333-000000000015",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-calcium",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "laboratory"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "17861-6",
+              "display": "Calcium"
+            }
+          ],
+          "text": "Calcium"
+        },
+        "subject": {
+          "reference": "Patient/patient-1"
+        },
+        "encounter": {
+          "reference": "Encounter/encounter-1"
+        },
+        "effectiveDateTime": "2024-10-01T08:15:00-04:00",
+        "valueQuantity": {
+          "value": 9.4,
+          "unit": "mg/dL",
+          "system": "http://unitsofmeasure.org",
+          "code": "mg/dL"
+        }
+      }
+    }
+  ]
+}
