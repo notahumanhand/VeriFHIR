@@ -1,16 +1,28 @@
 # SourceCheck — FHIR Source Validation POC
 
-A minimal Streamlit wireframe for a portfolio proof of concept that compares observations in a FHIR R4 bundle against evidence in a synthetic EHR screenshot.
+A Streamlit proof of concept that compares observations in a FHIR R4 bundle against evidence in a synthetic EHR screenshot. Azure AI Vision performs OCR; application code deterministically compares the extracted value and unit against the FHIR observation.
 
-## Current scope
+## Current capabilities
 
-This is a **wireframe**, not a working OCR or clinical validation system. It can:
-- Load the included synthetic screenshot and FHIR JSON bundle.
-- Accept alternate PNG/JPEG screenshots and JSON bundles.
-- Parse and list FHIR `Observation` resources dynamically.
-- Present the intended review layout and validation statuses.
+- Load the included synthetic EHR screenshot and FHIR R4 bundle, or upload PNG/JPEG and JSON inputs.
+- Discover `Observation` resources dynamically from `Bundle.entry[].resource`.
+- Send a configurable left-side crop of the screenshot to Azure AI Vision Read OCR. The default crop is intended to exclude an illustrative JSON pane on the right.
+- Match OCR text to observation labels, compare values and units separately, and classify results as Match, Value mismatch, Unit mismatch, Value and unit mismatch, Not found, or Needs review.
+- Draw evidence boxes on a copy of the screenshot and show the OCR text returned by Azure.
+- Handle missing credentials, malformed FHIR bundles, OCR failures, and timeouts with visible error messages.
 
-It does **not** yet perform OCR, locate source evidence, draw evidence overlays, or compare source values against FHIR. The UI deliberately does not claim that placeholder rows are matches.
+The application uses only synthetic demonstration data. Do not upload real patient information. This is not a clinical validation tool and is not intended for PHI or clinical decision-making.
+
+## Azure configuration
+
+Create an Azure AI Vision / Computer Vision resource and configure these environment variables on the Render web service:
+
+- `VISION_ENDPOINT` — the endpoint URL shown on the Azure resource's **Keys and Endpoint** page. Use the full URL, for example `https://YOUR-RESOURCE-NAME.cognitiveservices.azure.com/`.
+- `VISION_KEY` — either key shown on that same page.
+
+Keep the key in Render's environment settings. Do not commit a real key to GitHub or put it in `.env.example`. The application uses the Azure AI Vision Read API (`/vision/v3.2/read/analyze`) and polls Azure until OCR completes. The endpoint must correspond to the resource that issued the key.
+
+After changing environment variables in Render, trigger a redeploy/restart so the running process receives them.
 
 ## Run locally
 
@@ -24,39 +36,42 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+```
+
+Set `VISION_ENDPOINT` and `VISION_KEY` in your local shell, then run:
+
+```bash
 streamlit run app.py
 ```
 
-Open the local URL printed by Streamlit. Use **Load sample** to load the included synthetic inputs.
+Use **Load sample**, then click **Validate**. The sidebar's OCR region width setting controls how much of the screenshot is sent to OCR. Increase it only if the EHR result values or units are being cut off; a wider crop can include the illustrative JSON panel.
 
 ## Deploy to Render
 
-1. Push this repository to GitHub.
-2. In Render, create a new Blueprint or Web Service connected to the repository.
-3. If using the Blueprint, Render reads `render.yaml`. Confirm the selected plan is available to your account and adjust it in the dashboard if needed.
-4. Deploy and open the service URL.
+The repository's `render.yaml` defines the web service and declares `VISION_ENDPOINT` and `VISION_KEY` as environment variables that are configured outside source control.
 
-For manual Web Service configuration:
-- Build command: `pip install -r requirements.txt`
-- Start command: `streamlit run app.py --server.address 0.0.0.0 --server.port $PORT`
+1. Push the reviewed code to GitHub.
+2. Wait for Render to finish the deployment.
+3. In the Render service, open **Environment** and verify that `VISION_ENDPOINT` and `VISION_KEY` exist and have the correct values.
+4. Redeploy/restart if you changed the environment values.
+5. Open the service URL, click **Load sample**, and click **Validate**.
+6. Confirm the baseline result: 13 observations, 11 matches, a Hemoglobin unit mismatch (`13.5 g/dL` in the screenshot versus `13.5 mg/dL` in FHIR), and a Potassium value mismatch (`4.2 mmol/L` in the screenshot versus `4.8 mmol/L` in FHIR).
 
-No database or persistent disk is required for this wireframe.
+If OCR returns incomplete or unexpected results, expand **OCR text returned by Azure** and adjust the crop width before interpreting any finding.
 
-## Included sample data
+## Tests
 
-The `sample_data/` directory contains the manufactured EHR screenshot and FHIR R4 bundle from the supplied sample archive. They are synthetic demonstration data. Do not upload real patient information.
+Run the deterministic comparison tests with:
 
-## Planned next steps
+```bash
+pytest -q
+```
 
-1. Implement and test FHIR R4 parsing.
-2. Add an OCR adapter that returns text and bounding boxes.
-3. Exclude the illustrative JSON panel from screenshot OCR.
-4. Implement deterministic value/unit comparison.
-5. Draw evidence overlays and link table rows to screenshot locations.
-6. Add regression tests for the 11-match, one-unit-mismatch, one-value-mismatch baseline.
+The tests cover dynamic Observation parsing, the expected synthetic baseline, malformed bundle rejection, and common unit notation normalization. They use mocked OCR fragments and do not make a live Azure API request. A live Render test is still required to verify credentials, endpoint connectivity, and Azure's actual OCR response.
 
 ## Limitations
 
+- OCR localization depends on screenshot layout and recognition quality; ambiguous results should be reviewed rather than treated as matches.
+- The default crop assumes the relevant EHR results are on the left side of the screenshot. Adjust the crop width for the supplied synthetic layout.
 - No authentication, user accounts, database, or audit infrastructure.
-- Not intended for PHI, clinical decisions, or production use.
-- No OCR, deterministic comparison, or source-coordinate localization has been implemented yet.
+- Not intended for PHI, clinical decisions, production use, or full FHIR conformance.

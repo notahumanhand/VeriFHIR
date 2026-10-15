@@ -1,8 +1,17 @@
+import hashlib
 import json
+import os
+import time
+from io import BytesIO
 from pathlib import Path
 
+import requests
 import streamlit as st
-from PIL import Image, ImageDraw
+from PIL import Image
+from validation import (
+    draw_evidence_overlay, evaluate_observation, observation_name, observation_value,
+    parse_fhir_observations,
+)
 
 st.set_page_config(page_title="SourceCheck | FHIR Validation", page_icon=None, layout="wide")
 
@@ -16,11 +25,6 @@ st.markdown("""
     .metric { background: #F5F7F8; border: 1px solid #E1E6EA; border-radius: 10px; padding: 1rem; }
     .metric-label { color: #596773; font-size: .82rem; }
     .metric-value { font-size: 1.8rem; font-weight: 650; margin-top: .2rem; }
-    .status { display: inline-block; padding: .22rem .5rem; border-radius: 5px; font-size: .78rem; font-weight: 650; }
-    .status-match { color: #17603B; background: #E5F4EB; }
-    .status-unit { color: #805800; background: #FFF0C2; }
-    .status-value { color: #8E3030; background: #FCE8E6; }
-    .status-review { color: #4F5D6A; background: #E9EDF0; }
     div[data-testid="stDataFrame"] { border: 1px solid #E1E6EA; border-radius: 8px; overflow: hidden; }
     .panel-title { font-weight: 700; font-size: 1.05rem; margin-bottom: .2rem; }
     .muted { color: #65727D; font-size: .87rem; }
@@ -32,6 +36,101 @@ ROOT = Path(__file__).parent
 SAMPLE_DIR = ROOT / "sample_data"
 IMAGE_PATH = SAMPLE_DIR / "ehr_screenshot.png"
 BUNDLE_PATH = SAMPLE_DIR / "synthetic_ehr_bundle.json"
+AZURE_READ_API_VERSION = "3.2"
+
+
+def azure_read(image_bytes, endpoint, key, crop_percent=68):
+    """Submit the EHR-side crop to Azure AI Vision Read API and return OCR lines."""
+    endpoint = endpoint.strip().rstrip("/")
+    if not endpoint.startswith(("https://", "http://")):
+        raise ValueError("VISION_ENDPOINT must be a full URL beginning with https://.")
+    if not key.strip():
+        raise ValueError("VISION_KEY is empty.")
+
+    with Image.open(BytesIO(image_bytes)) as source:
+        image = source.convert("RGB")
+        crop_width = max(1, min(image.width, round(image.width * crop_percent / 100)))
+        # The demo screenshot places the EHR results on the left; this crop avoids
+        # treating a possible right-side illustrative JSON pane as source evidence.
+        source_crop = image.crop((0, 0, crop_width, image.height))
+        buffer = BytesIO()
+        source_crop.save(buffer, format="PNG")
+        crop_bytes = buffer.getvalue()
+
+    analyze_url = f"{endpoint}/vision/v{AZURE_READ_API_VERSION}/read/analyze"
+    headers = {
+        "Ocp-Apim-Subscription-Key": key.strip(),
+        "Content-Type": "application/octet-stream",
+    }
+    try:
+        response = requests.post(
+            analyze_url,
+            params={"language": "en"},
+            headers=headers,
+            data=crop_bytes,
+            timeout=(10, 45),
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach Azure AI Vision: {exc}") from exc
+
+    if response.status_code not in (200, 202):
+        detail = response.text[:500]
+        if response.status_code in (401, 403):
+            raise RuntimeError("Azure rejected the key or endpoint (HTTP "
+                               f"{response.status_code}). Check VISION_KEY and VISION_ENDPOINT.")
+        raise RuntimeError(f"Azure AI Vision returned HTTP {response.status_code}: {detail}")
+
+    operation_url = response.headers.get("Operation-Location")
+    if response.status_code == 200:
+        result = response.json()
+    elif operation_url:
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            try:
+                poll = requests.get(
+                    operation_url,
+                    headers={"Ocp-Apim-Subscription-Key": key.strip()},
+                    timeout=(10, 30),
+                )
+            except requests.RequestException as exc:
+                raise RuntimeError(f"Could not retrieve Azure OCR results: {exc}") from exc
+            if poll.status_code != 200:
+                raise RuntimeError(f"Azure OCR polling failed with HTTP {poll.status_code}: {poll.text[:300]}")
+            result = poll.json()
+            status = result.get("status", "").lower()
+            if status == "succeeded":
+                break
+            if status == "failed":
+                raise RuntimeError("Azure AI Vision could not read this image. Try a clearer synthetic screenshot.")
+        else:
+            raise RuntimeError("Azure OCR timed out while waiting for the Read operation.")
+    else:
+        raise RuntimeError("Azure accepted the OCR request but did not return an Operation-Location header.")
+
+    status = result.get("status", "").lower()
+    if status == "failed":
+        raise RuntimeError("Azure AI Vision reported that OCR processing failed.")
+    lines = []
+    for page in result.get("analyzeResult", {}).get("readResults", []):
+        for line in page.get("lines", []):
+            # Word-level boxes let the comparison separate adjacent table cells
+            # (label, result, and unit) even when Azure groups them into one line.
+            fragments = line.get("words") or [line]
+            for fragment in fragments:
+                box = fragment.get("boundingBox", [])
+                if len(box) >= 8:
+                    xs, ys = box[0::2], box[1::2]
+                    lines.append({
+                        "text": fragment.get("text", "").strip(),
+                        "x1": min(xs), "y1": min(ys),
+                        "x2": max(xs), "y2": max(ys),
+                        "cx": (min(xs) + max(xs)) / 2,
+                        "cy": (min(ys) + max(ys)) / 2,
+                    })
+    return lines
+
+
 
 st.markdown("""
 <div class="hero">
@@ -43,27 +142,32 @@ st.markdown("""
 
 with st.sidebar:
     st.markdown("### Validation inputs")
-    st.caption("This wireframe uses synthetic demonstration data only.")
+    st.caption("Synthetic demonstration data only. Do not upload real patient data.")
     use_sample = st.button("Load sample", type="primary", use_container_width=True)
     screenshot_upload = st.file_uploader("EHR screenshot", type=["png", "jpg", "jpeg"])
     bundle_upload = st.file_uploader("FHIR R4 bundle (JSON)", type=["json"])
+    crop_percent = st.slider(
+        "OCR region width (%)",
+        min_value=45, max_value=100, value=68,
+        help="The OCR request uses the left side of the screenshot to avoid reading an illustrative JSON pane on the right. Increase this only if the EHR values or units are cut off.",
+    )
     st.divider()
     st.markdown("**Pipeline status**")
     st.markdown("`1`  Input selection")
-    st.markdown("`2`  OCR evidence extraction")
+    st.markdown("`2`  Azure AI Vision OCR")
     st.markdown("`3`  Deterministic comparison")
-    st.caption("OCR and validation are placeholders in this wireframe.")
+    st.caption("Azure credentials are read from Render environment variables.")
 
 if use_sample:
     st.session_state["load_sample"] = True
 
-image = None
+image_bytes = None
 bundle = None
 try:
     if screenshot_upload is not None:
-        image = Image.open(screenshot_upload).convert("RGB")
+        image_bytes = screenshot_upload.getvalue()
     elif st.session_state.get("load_sample") and IMAGE_PATH.exists():
-        image = Image.open(IMAGE_PATH).convert("RGB")
+        image_bytes = IMAGE_PATH.read_bytes()
 except Exception as exc:
     st.error(f"Could not read screenshot: {exc}")
 
@@ -73,91 +177,130 @@ try:
     elif st.session_state.get("load_sample") and BUNDLE_PATH.exists():
         with open(BUNDLE_PATH, encoding="utf-8") as f:
             bundle = json.load(f)
-except Exception as exc:
+except (json.JSONDecodeError, OSError) as exc:
     st.error(f"Could not read FHIR JSON: {exc}")
 
-if image is None or bundle is None:
+if image_bytes is None or bundle is None:
     st.info("Load the synthetic sample or provide both input files to begin.")
     left, right = st.columns([1.15, 1])
     with left:
         st.markdown("#### Review workflow")
-        st.markdown("1. Load an EHR screenshot and FHIR R4 bundle.\n2. Run validation.\n3. Review per-observation status and supporting source evidence.")
+        st.markdown("1. Load an EHR screenshot and FHIR bundle.\n2. Run Azure OCR.\n3. Review each result and its highlighted source evidence.")
     with right:
-        st.markdown("#### Planned validation states")
+        st.markdown("#### Validation states")
         st.markdown("- **Match** — values and units agree.\n- **Value mismatch** — numerical values differ.\n- **Unit mismatch** — units differ.\n- **Not found** — source evidence is absent.\n- **Needs review** — evidence is ambiguous.")
     st.stop()
 
-entries = bundle.get("entry", []) if isinstance(bundle, dict) else []
-observations = [
-    entry.get("resource", {})
-    for entry in entries
-    if isinstance(entry, dict)
-    and isinstance(entry.get("resource"), dict)
-    and entry["resource"].get("resourceType") == "Observation"
-]
+try:
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    entries, observations = parse_fhir_observations(bundle)
+except (OSError, ValueError) as exc:
+    st.error(f"Invalid input: {exc}")
+    st.stop()
 
-def observation_name(resource):
-    code = resource.get("code", {})
-    if code.get("text"):
-        return code["text"]
-    for coding in code.get("coding", []):
-        if coding.get("display"):
-            return coding["display"]
-    return resource.get("id", "Unnamed observation")
+if not observations:
+    st.warning("No Observation resources were found in this FHIR bundle.")
 
-def observation_value(resource):
-    quantity = resource.get("valueQuantity", {})
-    if "value" not in quantity:
-        return "—", quantity.get("unit", "")
-    return str(quantity["value"]), quantity.get("unit", quantity.get("code", ""))
+input_fingerprint = hashlib.sha256(
+    image_bytes + json.dumps(bundle, sort_keys=True).encode("utf-8") + str(crop_percent).encode("ascii")
+).hexdigest()
+if st.session_state.get("result_fingerprint") != input_fingerprint:
+    st.session_state.pop("validation_results", None)
+    st.session_state.pop("ocr_lines", None)
+    st.session_state["result_fingerprint"] = input_fingerprint
 
 st.markdown("### Validation overview")
-st.caption("Input bundle parsed for display. Comparison results below are illustrative wireframe data, not OCR findings.")
-m1, m2, m3, m4, m5 = st.columns(5)
-metrics = [
-    (m1, "Observations", len(observations)),
-    (m2, "Matches", "—"),
-    (m3, "Mismatches", "—"),
-    (m4, "Not found", "—"),
-    (m5, "Needs review", "—"),
-]
-for col, label, value in metrics:
-    with col:
-        st.markdown(f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>', unsafe_allow_html=True)
-
-st.write("")
-validate = st.button("Validate sample", type="primary")
-if validate:
-    st.warning("Wireframe only: OCR extraction and deterministic comparison have not been implemented. No match or mismatch is being asserted.")
-
-left, right = st.columns([1.1, 1], gap="large")
-with left:
-    st.markdown('<div class="panel-title">Source EHR evidence</div>', unsafe_allow_html=True)
-    st.markdown('<div class="muted">Original screenshot preview · evidence overlays will appear here</div>', unsafe_allow_html=True)
-    st.image(image, use_container_width=True)
-    st.caption("The final implementation should OCR only the EHR panel, exclude any illustrative JSON panel, and preserve source-image coordinates.")
-with right:
-    st.markdown('<div class="panel-title">Observation results</div>', unsafe_allow_html=True)
-    st.markdown('<div class="muted">FHIR observations discovered from the uploaded bundle</div>', unsafe_allow_html=True)
-    rows = []
-    for resource in observations:
-        value, unit = observation_value(resource)
-        rows.append({
-            "Observation": observation_name(resource),
-            "FHIR value": value,
-            "FHIR unit": unit or "—",
-            "Source value": "Pending OCR",
-            "Status": "Not evaluated",
-            "Observation ID": resource.get("id", "—"),
-        })
-    if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True, height=430)
+st.caption(f"FHIR bundle parsed: {len(observations)} Observation resources. Azure OCR and comparison run when you click Validate.")
+if st.button("Validate", type="primary"):
+    endpoint = os.getenv("VISION_ENDPOINT", "").strip()
+    key = os.getenv("VISION_KEY", "").strip()
+    if not endpoint or not key:
+        st.error("Azure credentials are missing. Set VISION_ENDPOINT and VISION_KEY in Render Environment, then redeploy the service.")
     else:
-        st.warning("No Observation resources were found in this bundle.")
-    with st.expander("FHIR bundle details"):
-        st.write(f"Bundle type: `{bundle.get('type', 'unspecified')}`")
-        st.write(f"Resources: {len(entries)}")
-        st.json({"resourceType": bundle.get("resourceType"), "type": bundle.get("type"), "observation_count": len(observations)})
+        try:
+            with st.spinner("Sending the EHR screenshot region to Azure AI Vision…"):
+                lines = azure_read(image_bytes, endpoint, key, crop_percent)
+            if not lines:
+                st.error("Azure OCR returned no readable text. Try a clearer screenshot or adjust OCR region width.")
+            else:
+                results = [evaluate_observation(resource, lines, image.width) for resource in observations]
+                st.session_state["ocr_lines"] = lines
+                st.session_state["validation_results"] = results
+                st.success("OCR and deterministic comparison completed.")
+        except (RuntimeError, ValueError, requests.RequestException) as exc:
+            st.error(str(exc))
+
+results = st.session_state.get("validation_results", [])
+if results:
+    counts = {
+        "Matches": sum(r["Status"] == "Match" for r in results),
+        "Mismatches": sum("mismatch" in r["Status"].lower() for r in results),
+        "Not found": sum(r["Status"] == "Not found" for r in results),
+        "Needs review": sum(r["Status"] == "Needs review" for r in results),
+    }
+    columns = st.columns(5)
+    metrics = [
+        ("Observations", len(observations)),
+        ("Matches", counts["Matches"]),
+        ("Mismatches", counts["Mismatches"]),
+        ("Not found", counts["Not found"]),
+        ("Needs review", counts["Needs review"]),
+    ]
+    for column, (label, value) in zip(columns, metrics):
+        with column:
+            st.markdown(
+                f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
+    left, right = st.columns([1.1, 1], gap="large")
+    with left:
+        st.markdown('<div class="panel-title">Source EHR evidence</div>', unsafe_allow_html=True)
+        st.markdown('<div class="muted">Original screenshot with OCR evidence highlighted</div>', unsafe_allow_html=True)
+        st.image(draw_evidence_overlay(image, results), use_container_width=True)
+        st.caption("Highlights indicate OCR evidence used for the comparison. The original uploaded image is not modified.")
+    with right:
+        st.markdown('<div class="panel-title">Observation results</div>', unsafe_allow_html=True)
+        st.markdown('<div class="muted">FHIR values compared with OCR evidence from the EHR-side crop</div>', unsafe_allow_html=True)
+        display_rows = [{key: value for key, value in result.items() if key != "evidence_box"} for result in results]
+        st.dataframe(display_rows, use_container_width=True, hide_index=True, height=500)
+    with st.expander("OCR text returned by Azure"):
+        st.dataframe(
+            [{"Text": line["text"], "X": round(line["x1"]), "Y": round(line["y1"])} for line in st.session_state.get("ocr_lines", [])],
+            use_container_width=True,
+            hide_index=True,
+        )
+else:
+    m1, m2, m3, m4, m5 = st.columns(5)
+    metrics = [(m1, "Observations", len(observations)), (m2, "Matches", "—"),
+               (m3, "Mismatches", "—"), (m4, "Not found", "—"), (m5, "Needs review", "—")]
+    for col, label, value in metrics:
+        with col:
+            st.markdown(f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{value}</div></div>', unsafe_allow_html=True)
+    left, right = st.columns([1.1, 1], gap="large")
+    with left:
+        st.markdown('<div class="panel-title">Source EHR evidence</div>', unsafe_allow_html=True)
+        st.image(image, use_container_width=True)
+        st.caption("No evidence is highlighted until OCR and comparison have run.")
+    with right:
+        st.markdown('<div class="panel-title">Observation results</div>', unsafe_allow_html=True)
+        rows = []
+        for resource in observations:
+            value, unit = observation_value(resource)
+            rows.append({
+                "Observation": observation_name(resource),
+                "FHIR value": value,
+                "FHIR unit": unit or "—",
+                "Source value": "Pending OCR",
+                "Source unit": "Pending OCR",
+                "Status": "Not evaluated",
+                "Observation ID": resource.get("id", "—"),
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True, height=500)
+
+with st.expander("FHIR bundle details"):
+    st.write(f"Bundle type: `{bundle.get('type', 'unspecified')}`")
+    st.write(f"Resources: {len(entries)}")
+    st.json({"resourceType": bundle.get("resourceType"), "type": bundle.get("type"), "observation_count": len(observations)})
 
 st.divider()
-st.markdown("**Scope note**  This is a UI wireframe, not a clinical validation tool. Use synthetic data only. It does not perform OCR, validate clinical accuracy, or confirm FHIR conformance.")
+st.markdown("**Scope note**  This proof of concept uses synthetic data only. OCR locates visible text; deterministic application code compares values and units. It is not a clinical validation tool and does not confirm FHIR conformance.")
