@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import requests
+import pandas as pd
 import streamlit as st
 from PIL import Image
 from validation import (
@@ -130,6 +131,44 @@ def azure_read(image_bytes, endpoint, key, crop_percent=68):
                     })
     return lines
 
+
+def style_observation_row(row):
+    """Apply a high-contrast background to rows that need attention."""
+    status = str(row.get("Status", "")).strip().lower()
+    styles = {
+        "unit mismatch": ("#4A3A1C", "#FFE7A3"),
+        "value mismatch": ("#4A2528", "#FFE5E5"),
+        "value and unit mismatch": ("#5A2026", "#FFFFFF"),
+        "not found": ("#303944", "#E2E8F0"),
+        "needs review": ("#303944", "#E2E8F0"),
+    }
+    if status in styles:
+        background, foreground = styles[status]
+        return [
+            f"background-color: {background}; color: {foreground};"
+            for _ in row.index
+        ]
+    return ["" for _ in row.index]
+
+
+def display_observation_table(rows, height=500):
+    """Render results and highlight mismatch/review rows across all columns."""
+    dataframe = pd.DataFrame(rows)
+    if "Status" in dataframe.columns:
+        styled_dataframe = dataframe.style.apply(style_observation_row, axis=1)
+        st.dataframe(
+            styled_dataframe,
+            use_container_width=True,
+            hide_index=True,
+            height=height,
+        )
+    else:
+        st.dataframe(
+            dataframe,
+            use_container_width=True,
+            hide_index=True,
+            height=height,
+        )
 
 
 st.markdown("""
@@ -262,7 +301,7 @@ if results:
         st.markdown('<div class="panel-title">Observation results</div>', unsafe_allow_html=True)
         st.markdown('<div class="muted">FHIR values compared with OCR evidence from the EHR-side crop</div>', unsafe_allow_html=True)
         display_rows = [{key: value for key, value in result.items() if key != "evidence_box"} for result in results]
-        st.dataframe(display_rows, use_container_width=True, hide_index=True, height=500)
+        display_observation_table(display_rows, height=500)
     with st.expander("OCR text returned by Azure"):
         st.dataframe(
             [{"Text": line["text"], "X": round(line["x1"]), "Y": round(line["y1"])} for line in st.session_state.get("ocr_lines", [])],
@@ -295,7 +334,7 @@ else:
                 "Status": "Not evaluated",
                 "Observation ID": resource.get("id", "—"),
             })
-        st.dataframe(rows, use_container_width=True, hide_index=True, height=500)
+        display_observation_table(rows, height=500)
 
 with st.expander("FHIR bundle details"):
     st.write(f"Bundle type: `{bundle.get('type', 'unspecified')}`")
